@@ -1,0 +1,25 @@
+
+
+/**
+ * @intent DEMO Pull Vendor/Platform/Model
+ * @description Define Software Versions in a single location to be used in checks **/
+/** Note I have tagged all the devices i'm interested in query as "Network" if you want to get all, just remove line 10 'foreach tag' **/
+
+
+foreach Device in network.devices
+foreach Tag in Device.tagNames where Tag == "Network"
+let PLATFORM = Device.platform
+foreach Component in PLATFORM.components
+where Component.partType == DevicePartType.CHASSIS
+ 
+
+select {
+  deviceName: Device.name,
+  vendor: PLATFORM.vendor,
+  model:PLATFORM.model,
+  os: PLATFORM.os,
+  osVersion: PLATFORM.osVersion,  
+  componentName: Component.name,
+  serialNumber: Component.serialNumber,
+  managementIps: PLATFORM.managementIps
+}
