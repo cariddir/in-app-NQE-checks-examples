@@ -1,0 +1,98 @@
+/** File to create xyz/Network Standards/01_NetworkVars/Network_OS and import the xxx_PROD lists below **/
+/** Define Software Versions in a single location to be used in checks **/
+/** Use following statement to import OS List **/
+/** 
+Need to create a record per OS Version that ties Version to LDoS//
+
+export EOS_PROD = ["4.28.3M", "4.24.6M", "4.23.5M"];
+export IOSXE_PROD = ["17.6.4", "17.4.3a", "17.4.3"];
+export IOS_PROD = ["15.2(2)E7", "15.2(2)E6"];
+export NXOS_PROD = ["15.2(4e)", "10.2.3F","10.1(2)", "9.3.8"];
+export IOSXR_PROD = ["7.1.2"];
+**/
+
+
+/**
+ * @intent  Foreach Device Get Name/IP/osVersion from DataModel & check osVer is valid
+ * @description Flag osVersions that are not in the approved list located in 01_NetworkVars/Network_OS
+ */
+import "xyz/Network Standards/01_NetworkVars/Network_OS";
+
+Arista_EOS =
+  foreach Device in network.devices
+  let platform = Device.platform
+  where Device.platform.vendor == Vendor.ARISTA &&
+        Device.platform.os == OS.ARISTA_EOS
+  foreach ver in EOS_PROD
+  select {
+    deviceName: Device.name,
+    vendor: platform.vendor,
+    platform: platform.os,
+    model: Device.platform.model,
+    osVersion: Device.platform.osVersion,
+    osExpected: EOS_PROD,
+    violation: toString(Device.platform.osVersion) not in EOS_PROD,
+    managementIps: platform.managementIps
+  };
+
+Cisco_NXOS =
+  foreach Device in network.devices
+  let platform = Device.platform
+  where Device.platform.vendor == Vendor.CISCO && Device.platform.os == OS.NXOS
+  foreach ver in NXOS_PROD
+  select {
+    deviceName: Device.name,
+    vendor: platform.vendor,
+    platform: platform.os,
+    model: Device.platform.model,
+    osVersion: Device.platform.osVersion,
+    osExpected: NXOS_PROD,
+    violation: toString(Device.platform.osVersion) not in NXOS_PROD,
+    managementIps: platform.managementIps
+  };
+
+Cisco_IOSXE =
+  foreach Device in network.devices
+  let platform = Device.platform
+  where Device.platform.vendor == Vendor.CISCO &&
+        Device.platform.os == OS.IOS_XE
+  foreach ver in IOSXE_PROD
+  select {
+    deviceName: Device.name,
+    vendor: platform.vendor,
+    platform: platform.os,
+    model: Device.platform.model,
+    osVersion: Device.platform.osVersion,
+    osExpected: IOSXE_PROD,
+    violation: toString(Device.platform.osVersion) not in IOSXE_PROD,
+    managementIps: platform.managementIps
+  };
+Cisco_IOSXR =
+  foreach Device in network.devices
+  let platform = Device.platform
+  where Device.platform.vendor == Vendor.CISCO &&
+        Device.platform.os == OS.IOS_XR
+  foreach ver in IOSXR_PROD
+  select {
+    deviceName: Device.name,
+    vendor: platform.vendor,
+    platform: platform.os,
+    model: Device.platform.model,
+    osVersion: Device.platform.osVersion,
+    osExpected: IOSXR_PROD,
+    violation: toString(Device.platform.osVersion) not in IOSXR_PROD,
+    managementIps: platform.managementIps
+  };
+osList = Cisco_NXOS + Arista_EOS + Cisco_IOSXE + Cisco_IOSXR;
+
+foreach result in osList
+select {
+  device: result.deviceName,
+  Vendor: result.vendor,
+  OSPlatform: result.platform,
+  Running_OS: result.osVersion,
+  Expected_OS: result.osExpected,
+  model: result.model,
+  ip: result.managementIps,
+  violation: result.violation
+}
