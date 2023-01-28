@@ -1,0 +1,140 @@
+/**  Same as NTP check but just checking DNS on Arista/Cisco   **/
+/**  the DNS 'standard' in a separate doc called 'DNS_servers' looks like this **/
+/**  export DNS_HOSTS = ["7.7.7.7", "7.7.7.8"];  **/
+/**     **/
+/**     **/
+/**     **/
+/**     **/
+
+
+/** import  "xyz/Network Standards/01_NetworkVars/DNS_Servers"; **/
+
+/** export DNS_HOSTS = ["7.7.7.7", "7.7.7.8"]; **/
+import "xyz/Network Standards/01_NetworkVars/DNS_Servers";
+
+PullConfigArista(Device) =
+  foreach Config in Device.files.config
+  let AristaMatch = patternMatch(Config.text, `ip name-server vrf NM {SERVER:string}`)
+  where isPresent(AristaMatch)
+  select AristaMatch.SERVER;
+
+PullConfigCiscoIOSXE(Device) =
+  foreach Config in Device.files.config
+  let CiscoIOSXEMatch = patternMatch(Config.text, `ip name-server {ipAddress:string }`)
+  where isPresent(CiscoIOSXEMatch)
+  select CiscoIOSXEMatch.ipAddress;
+
+PullConfigCiscoIOS(Device) =
+  foreach Config in Device.files.config
+  let CiscoIOSMatch = patternMatch(Config.text, `ip name-server {SERVER:string}`)
+  where isPresent(CiscoIOSMatch) || isPresent(CiscoIOSMatch)
+  select CiscoIOSMatch.SERVER;
+
+PullConfigCiscoIOSXR(Device) =
+  foreach Config in Device.files.config
+  let CiscoIOSMatch = patternMatch(Config.text, `ip name-server {SERVER:string} {string}`)
+  where isPresent(CiscoIOSMatch) || isPresent(CiscoIOSMatch)
+  select CiscoIOSMatch.SERVER;
+
+PullConfigCiscoNXOS(Device) =
+  foreach Config in Device.files.config
+  let CiscoIOSMatch = patternMatch(Config.text, `ip name-server {SERVER:string} {string}`)
+  where isPresent(CiscoIOSMatch) || isPresent(CiscoIOSMatch)
+  select CiscoIOSMatch.SERVER;
+
+RunningConfDNS =
+  foreach Device in network.devices
+  let AristaConfigDNS = PullConfigArista(Device)
+  let CiscoIOSXE_ConfigDNS = PullConfigCiscoIOSXE(Device)
+  let CiscoIOSXR_ConfigDNS = PullConfigCiscoIOSXR(Device)
+  let CiscoIOS_ConfigDNS = PullConfigCiscoIOS(Device)
+  let CiscoNXOS_ConfigDNS = PullConfigCiscoNXOS(Device)
+  let Model = Device.platform.model
+
+  /** Limit to only Network Tagged Devices **/
+  foreach Tag in Device.tagNames
+  where Tag == "Network"
+  select {
+    HostName: Device.name,
+    Model: Device.platform.os,
+    /** Arista Check **/
+    AristaFix: (foreach ImportedElement1 in DNS_HOSTS
+                select "ip name-server vrf default " + ImportedElement1),
+    AristaRunningConf: (foreach RunningConfElement1 in AristaConfigDNS
+                        select "ip name-server vrf default " + RunningConfElement1),
+    AristaConfigNTP: AristaConfigDNS,
+    AristaRemove: AristaConfigDNS - DNS_HOSTS,
+    
+    /** Cisco IOS_XE Check **/
+    CiscoFixIOSXE: (foreach ImportedElement2 in DNS_HOSTS
+                    select "ip name-server " + ImportedElement2),
+    CiscoRunningConfIOSXE: (foreach RunningConfElement in CiscoIOSXE_ConfigDNS
+                            select "ip name-server " + RunningConfElement),
+    CiscoConfigNTPIOSXE: CiscoIOSXE_ConfigDNS,
+    CiscoRemoveIOSXE: CiscoIOSXE_ConfigDNS - DNS_HOSTS,
+    UnknownIOSXE: "Not-Known",
+    /** Cisco IOS Check **/
+    CiscoFixIOS: (foreach ImportedElement3 in DNS_HOSTS
+                  select "ntp-server " + ImportedElement3),
+    CiscoRunningConfIOS: (foreach RunningConfElement in CiscoIOS_ConfigDNS
+                          select "ip name-server " + RunningConfElement),
+    CiscoConfigNTPIOS: CiscoIOS_ConfigDNS,
+    CiscoRemoveIOS: CiscoIOS_ConfigDNS - DNS_HOSTS,
+    UnknownIOS: "Not-Known",
+    /** Cisco IOS-XR Check **/
+    CiscoFixIOSXR: (foreach ImportedElement4 in DNS_HOSTS
+                    select "ntp-server " + ImportedElement4),
+    CiscoRunningConfIOSXR: (foreach RunningConfElement in CiscoIOSXR_ConfigDNS
+                            select "ip name-server " + RunningConfElement),
+    CiscoConfigNTPIOSXR: CiscoIOSXR_ConfigDNS,
+    CiscoRemoveIOSXR: CiscoIOSXR_ConfigDNS - DNS_HOSTS,
+    UnknownIOSXR: "Not-Known",
+    /** Cisco NXOS Check **/
+    CiscoFixNXOS: (foreach ImportedElement5 in DNS_HOSTS
+                   select "ntp-server " + ImportedElement5),
+    CiscoRunningConfNXOS: (foreach RunningConfElement in CiscoNXOS_ConfigDNS
+                           select "ip name-server " + RunningConfElement),
+    CiscoConfigNXOS: CiscoNXOS_ConfigDNS,
+    CiscoRemoveNXOS: CiscoNXOS_ConfigDNS - DNS_HOSTS,
+    UnknownNXOS: "Not-Known"
+  };
+
+/** Add if Logic in selection for Cisco below **/
+foreach IP in distinct(RunningConfDNS())
+select {
+  HostName: IP.HostName,
+  Model: IP.Model,
+  Actual_Config: if IP.Model == OS.ARISTA_EOS
+                 then IP.AristaRunningConf
+                 else if IP.Model == OS.IOS_XE
+                      then IP.CiscoRunningConfIOSXE
+                      else if IP.Model == OS.IOS
+                           then IP.CiscoRunningConfIOS
+                           else if IP.Model == OS.IOS_XR
+                                then IP.CiscoRunningConfIOSXR
+                                else if IP.Model == OS.NXOS
+                                     then IP.CiscoRunningConfNXOS
+                                     else NO_MATCH,
+  xyz_Standard: if IP.Model == OS.ARISTA_EOS
+                then IP.AristaFix
+                else if IP.Model == OS.IOS_XE
+                     then IP.CiscoFixIOSXE
+                     else if IP.Model == OS.IOS
+                          then IP.CiscoFixIOS
+                          else if IP.Model == OS.IOS_XR
+                               then IP.CiscoFixIOSXR
+                               else if IP.Model == OS.NXOS
+                                    then IP.CiscoFixNXOS
+                                    else NO_MATCH,
+  Remove: if IP.Model == OS.ARISTA_EOS
+          then IP.AristaRemove
+          else if IP.Model == OS.IOS_XE
+               then IP.CiscoRemoveIOSXE
+               else if IP.Model == OS.IOS
+                    then IP.CiscoRemoveIOS
+                    else if IP.Model == OS.IOS_XR
+                         then IP.CiscoRemoveIOSXR
+                         else if IP.Model == OS.NXOS
+                              then IP.CiscoRemoveNXOS
+                              else NO_MATCH
+}
